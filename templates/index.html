@@ -5,73 +5,150 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Pen Plotter</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; max-width: 800px; }
-    h1 { margin-bottom: 1rem; }
-    .row { margin-bottom: 1rem; }
-    textarea { width: 100%; height: 240px; font-family: monospace; }
-    button { padding: 0.5rem 1rem; cursor: pointer; }
-    #downloadBtn { display: none; margin-left: 0.5rem; }
-    #status { font-weight: bold; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 2rem auto; max-width: 860px; background: #f5f5f5; color: #222; }
+    h1 { margin-bottom: 0.25rem; font-size: 1.6rem; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .card { background: #fff; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+    .row { margin-bottom: 0.75rem; }
+    label { font-weight: bold; display: block; margin-bottom: 0.3rem; font-size: 0.9rem; }
+    input[type=file] { width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; background: #fafafa; }
+    .btn-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    button { padding: 0.55rem 1.2rem; border: none; border-radius: 5px; cursor: pointer; font-size: 0.95rem; font-weight: bold; }
+    #processBtn { background: #1a73e8; color: #fff; }
+    #processBtn:disabled { background: #aaa; cursor: not-allowed; }
+    #downloadBtn { background: #2e7d32; color: #fff; display: none; text-decoration: none; }
+    .status-bar { padding: 0.5rem 0.75rem; border-radius: 5px; background: #e8f0fe; font-size: 0.9rem; }
+    .status-bar.error { background: #fce8e6; color: #c62828; }
+    .status-bar.done  { background: #e6f4ea; color: #2e7d32; }
+    .steps { list-style: none; padding: 0; margin: 0; }
+    .steps li { padding: 0.3rem 0; font-size: 0.88rem; color: #777; display: flex; align-items: center; gap: 0.5rem; }
+    .steps li.active { color: #1a73e8; font-weight: bold; }
+    .steps li.done   { color: #2e7d32; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+    .dot.active { background: #1a73e8; }
+    .dot.done   { background: #2e7d32; }
+    textarea { width: 100%; height: 220px; font-family: monospace; font-size: 0.8rem; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; resize: vertical; }
+    .preview-img { max-width: 100%; border-radius: 6px; margin-top: 0.5rem; display: none; }
   </style>
 </head>
 <body>
   <h1>AI Pen Plotter</h1>
+  <p class="subtitle">4-layer portrait pipeline: HED outlines · Voronoi stippling · Region hatching · Face emphasis</p>
 
-  <div class="row">
-    <input id="imageInput" type="file" accept="image/*">
+  <div class="card">
+    <div class="row">
+      <label for="imageInput">Upload portrait photo</label>
+      <input id="imageInput" type="file" accept="image/*">
+    </div>
+    <div class="btn-row">
+      <button id="processBtn">Generate G-code</button>
+      <a id="downloadBtn" href="/download"><button type="button">Download G-code</button></a>
+    </div>
   </div>
 
-  <div class="row">
-    <button id="processBtn">Process &amp; Generate G-code</button>
-    <a id="downloadBtn" href="/download"><button type="button">Download G-code</button></a>
+  <div class="card">
+    <div class="row">
+      <div id="statusBar" class="status-bar">Idle — upload an image and click Generate</div>
+    </div>
+    <ul class="steps">
+      <li id="s1"><span class="dot" id="d1"></span> YOLOv8 multi-person detection</li>
+      <li id="s2"><span class="dot" id="d2"></span> Layer 1: HED edge outlines</li>
+      <li id="s3"><span class="dot" id="d3"></span> Layer 2: Weighted Voronoi stippling</li>
+      <li id="s4"><span class="dot" id="d4"></span> Layer 3: Region-aware hatching (hair / clothes)</li>
+      <li id="s5"><span class="dot" id="d5"></span> Layer 4: Face feature emphasis</li>
+    </ul>
   </div>
 
-  <div class="row">
-    Status: <span id="status">Idle</span>
-  </div>
-
-  <div class="row">
-    <textarea id="preview" placeholder="G-code preview will appear here..." readonly></textarea>
+  <div class="card">
+    <label>G-code preview</label>
+    <textarea id="preview" placeholder="G-code will appear here after processing..." readonly></textarea>
   </div>
 
   <script>
     const imageInput = document.getElementById("imageInput");
     const processBtn = document.getElementById("processBtn");
     const downloadBtn = document.getElementById("downloadBtn");
-    const statusEl = document.getElementById("status");
-    const previewEl = document.getElementById("preview");
+    const statusBar  = document.getElementById("statusBar");
+    const previewEl  = document.getElementById("preview");
+    const steps = [1,2,3,4,5].map(i => ({
+      li: document.getElementById("s"+i),
+      dot: document.getElementById("d"+i),
+    }));
+
+    function resetSteps() {
+      steps.forEach(({li, dot}) => {
+        li.className = "";
+        dot.className = "dot";
+      });
+    }
+
+    function setStep(n) {
+      steps.forEach(({li, dot}, i) => {
+        if (i < n - 1) { li.className = "done";  dot.className = "dot done"; }
+        else if (i === n - 1) { li.className = "active"; dot.className = "dot active"; }
+        else { li.className = ""; dot.className = "dot"; }
+      });
+    }
+
+    function allDone() {
+      steps.forEach(({li, dot}) => { li.className = "done"; dot.className = "dot done"; });
+    }
+
+    function setStatus(msg, type="") {
+      statusBar.textContent = msg;
+      statusBar.className = "status-bar" + (type ? " " + type : "");
+    }
+
+    // Animate step labels while server processes (server logs go to console, not browser)
+    let stepTimer = null;
+    function animateSteps() {
+      let n = 1;
+      setStep(n);
+      stepTimer = setInterval(() => {
+        n++;
+        if (n <= 5) setStep(n);
+      }, 12000); // ~12 s per layer estimate
+    }
 
     processBtn.addEventListener("click", async () => {
       if (!imageInput.files || imageInput.files.length === 0) {
-        statusEl.textContent = "Please choose an image first.";
+        setStatus("Please choose an image first.", "error");
         return;
       }
 
       const formData = new FormData();
       formData.append("image", imageInput.files[0]);
 
-      statusEl.textContent = "Uploading image...";
+      resetSteps();
       previewEl.value = "";
       downloadBtn.style.display = "none";
       processBtn.disabled = true;
+      setStatus("Uploading and processing — this takes 1–5 minutes...");
+      animateSteps();
 
       try {
-        statusEl.textContent = "Processing full pipeline...";
-        const response = await fetch("/process", {
-          method: "POST",
-          body: formData
-        });
-
+        const response = await fetch("/process", { method: "POST", body: formData });
         const data = await response.json();
+
+        clearInterval(stepTimer);
+
         if (!response.ok) {
-          throw new Error(data.message || "Processing failed");
+          setStatus("Error: " + (data.message || "Processing failed"), "error");
+          resetSteps();
+          return;
         }
 
+        allDone();
         previewEl.value = data.gcode_preview || "";
-        statusEl.textContent = "Done";
-        downloadBtn.style.display = "inline";
+        const lines = (data.gcode_preview || "").split("\n").filter(l => l.startsWith("G1 X")).length;
+        setStatus(`Done — ${lines}+ draw moves generated`, "done");
+        downloadBtn.style.display = "inline-block";
+
       } catch (err) {
-        statusEl.textContent = "Error: " + err.message;
+        clearInterval(stepTimer);
+        setStatus("Error: " + err.message, "error");
+        resetSteps();
       } finally {
         processBtn.disabled = false;
       }
