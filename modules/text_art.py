@@ -100,6 +100,24 @@ def _letter_to_outline_strokes(letter: str) -> list:
     return strokes
 
 
+def _compute_density(letter: str) -> float:
+    """Fraction of filled pixels in the rendered letter — visual ink weight."""
+    binary = _render_binary(letter, _RENDER_PX)
+    return float(np.sum(binary > 0)) / max(1, binary.size)
+
+
+def build_brightness_palette(chars: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ") -> list:
+    """
+    Return list of unique chars sorted darkest-first (highest ink density → lowest).
+    Maps image brightness → letter: dark pixel → heavy letter (M/W/B), light → thin (I/L/T).
+    """
+    unique = list(dict.fromkeys(chars))   # preserve order, deduplicate
+    densities = {ch: _compute_density(ch) for ch in unique}
+    sorted_chars = sorted(unique, key=lambda c: densities[c], reverse=True)
+    print(f"  Brightness palette (dark->light): {''.join(sorted_chars)}")
+    return sorted_chars
+
+
 def precompute_strokes(word: str) -> dict:
     """
     Pre-render and outline-trace every unique character in word.
@@ -129,10 +147,17 @@ def text_art_gcode(
     min_scale: float = 0.28,
     skip_brightness: int = 215,
     gamma: float = 1.6,
+    palette: list = None,
 ) -> list:
     """
-    Tile the image with letters from word.
-    Letter height scales with local darkness:
+    Tile the image with letters sized by local darkness.
+
+    Two modes:
+      palette  (not None) — brightness-mapped: dark cell → densest letter,
+                            light cell → thinnest letter (auto A-Z mode).
+      word cycling (palette=None) — letters cycle through `word` in order.
+
+    Letter height also scales with darkness:
         dark  → max_scale × cell_h  (big letter)
         light → min_scale × cell_h  (tiny letter)
         white → blank
@@ -167,13 +192,22 @@ def text_art_gcode(
             brightness = float(np.mean(gray_reg))
             person_frac = float(np.mean(mask_reg > 0)) if mask_reg.size > 0 else 0.0
 
-            letter = word[letter_idx % n]
-            letter_idx += 1
-
-            # Skip bright / background areas
+            # Skip bright / background areas (before letter selection to avoid wasting idx)
             if brightness > skip_brightness or person_frac < 0.25:
                 col_x += int(cell_h * 0.55) + 1
                 continue
+
+            # Letter selection
+            if palette is not None:
+                # Auto mode: map brightness → letter by ink density
+                # brightness 0 (dark) → palette[0] (densest), skip_brightness → palette[-1] (thinnest)
+                idx = int((brightness / skip_brightness) * (len(palette) - 1))
+                idx = max(0, min(len(palette) - 1, idx))
+                letter = palette[idx]
+            else:
+                # Word cycling mode
+                letter = word[letter_idx % n]
+                letter_idx += 1
 
             # Brightness → letter scale with gamma contrast boost
             t = float(np.clip(brightness / skip_brightness, 0.0, 1.0))

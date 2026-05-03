@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 from modules.subject_detection import detect_persons_advanced
-from modules.text_art import precompute_strokes, text_art_gcode
+from modules.text_art import build_brightness_palette, precompute_strokes, text_art_gcode
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _OUTPUT_DIR = os.path.join(_PROJECT_ROOT, "output")
@@ -30,13 +30,18 @@ def process_text_art(
     image_path: str,
     word: str = "VARSHEETHvarsheeth",
     cell_h: int = 14,
+    mode: str = "word",
+    chars: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 ) -> str:
     """
     Full text-art pen plotter pipeline:
       1. YOLOv8 multi-person detection + crop
-      2. Pre-render letter skeletons for every unique char in word
+      2. Pre-render letter skeletons
       3. Tile image with letters, size ∝ local darkness
       4. Save G-code to output/drawing_text.gcode
+
+    mode='word'  → cycle letters from `word` (original behaviour)
+    mode='auto'  → pick letter by brightness using sorted A-Z density palette
     """
     os.makedirs(_OUTPUT_DIR, exist_ok=True)
 
@@ -52,9 +57,15 @@ def process_text_art(
 
     to_mm = _make_to_mm(w, h)
 
-    # ── Step 2: Pre-render letter skeletons ───────────────────────────────
-    print(f"[2/4] Pre-rendering strokes for: {set(word)}")
-    stroke_cache = precompute_strokes(word)
+    # ── Step 2: Build palette / pre-render letter skeletons ───────────────
+    palette = None
+    if mode == "auto":
+        print(f"[2/4] Building brightness palette from chars: {chars}")
+        palette = build_brightness_palette(chars)
+        stroke_cache = precompute_strokes("".join(palette))
+    else:
+        print(f"[2/4] Pre-rendering strokes for word: {set(word)}")
+        stroke_cache = precompute_strokes(word)
 
     # ── Step 3: Tile image with text ──────────────────────────────────────
     rows = h // cell_h
@@ -69,6 +80,7 @@ def process_text_art(
         w,
         h,
         cell_h=cell_h,
+        palette=palette,
     )
     gcode.extend(art_lines)
     gcode.append("M2")

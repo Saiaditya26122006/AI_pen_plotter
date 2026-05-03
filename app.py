@@ -26,6 +26,9 @@ def process():
 
     style = request.form.get("style", "text")
     word = request.form.get("word", "VARSHEETHvarsheeth").strip() or "VARSHEETHvarsheeth"
+    mode = request.form.get("mode", "word")   # 'word' or 'auto'
+    chars = (request.form.get("chars", "ABCDEFGHIJKLMNOPQRSTUVWXYZ").strip().upper()
+             or "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     try:
         cell_h = int(request.form.get("cell_h", 14))
         cell_h = max(6, min(cell_h, 40))
@@ -41,7 +44,7 @@ def process():
             gcode = process_image_full_pipeline(UPLOADED_PATH)
             filename = "drawing.gcode"
         else:
-            gcode = process_text_art(UPLOADED_PATH, word=word, cell_h=cell_h)
+            gcode = process_text_art(UPLOADED_PATH, word=word, cell_h=cell_h, mode=mode, chars=chars)
             filename = "drawing_text.gcode"
     except Exception as exc:
         return jsonify({"status": "error", "message": str(exc)}), 500

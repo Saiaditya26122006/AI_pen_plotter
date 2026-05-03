@@ -68,9 +68,30 @@
 
     <!-- Text art options -->
     <div id="textOptions">
-      <label for="wordInput">Word / phrase to repeat</label>
-      <input id="wordInput" type="text" value="VARSHEETHvarsheeth" placeholder="e.g. VARSHEETHvarsheeth">
-      <p class="info">Uppercase = large letters in shadows · lowercase = small letters in midtones</p>
+      <label>Letter mode</label>
+      <div class="style-row" style="margin-bottom:.5rem">
+        <div class="style-btn active" id="btnWord" onclick="setMode('word')">
+          <strong>Word repeat</strong><br><small>Cycle letters of a word</small>
+        </div>
+        <div class="style-btn" id="btnAuto" onclick="setMode('auto')">
+          <strong>Auto A–Z</strong><br><small>Pick letter by brightness</small>
+        </div>
+      </div>
+
+      <!-- Word repeat sub-options -->
+      <div id="wordOpts">
+        <label for="wordInput">Word / phrase to repeat</label>
+        <input id="wordInput" type="text" value="VARSHEETHvarsheeth" placeholder="e.g. VARSHEETHvarsheeth">
+        <p class="info">Uppercase = large letters in shadows · lowercase = small letters in midtones</p>
+      </div>
+
+      <!-- Auto A-Z sub-options -->
+      <div id="autoOpts" style="display:none">
+        <label for="charsInput">Character set (dark→light auto-sorted)</label>
+        <input id="charsInput" type="text" value="ABCDEFGHIJKLMNOPQRSTUVWXYZ" placeholder="ABCDEFGHIJKLMNOPQRSTUVWXYZ">
+        <p class="info">Dark areas → heaviest letter (M, W, B) · Light areas → thinnest letter (I, L, T)</p>
+      </div>
+
       <label for="cellInput">Letter row height (px) — lower = finer detail</label>
       <input id="cellInput" type="number" value="14" min="6" max="40">
     </div>
@@ -109,7 +130,16 @@
 
   <script>
     let currentStyle = 'text';
+    let currentMode  = 'word';
     let dlFilename = 'drawing_text.gcode';
+
+    function setMode(m) {
+      currentMode = m;
+      document.getElementById('btnWord').className = 'style-btn' + (m === 'word' ? ' active' : '');
+      document.getElementById('btnAuto').className = 'style-btn' + (m === 'auto' ? ' active' : '');
+      document.getElementById('wordOpts').style.display = m === 'word' ? 'block' : 'none';
+      document.getElementById('autoOpts').style.display = m === 'auto' ? 'block' : 'none';
+    }
 
     function setStyle(s) {
       currentStyle = s;
@@ -161,8 +191,13 @@
       fd.append('image', files[0]);
       fd.append('style', currentStyle);
       if (currentStyle === 'text') {
-        fd.append('word', document.getElementById('wordInput').value || 'VARSHEETHvarsheeth');
+        fd.append('mode', currentMode);
         fd.append('cell_h', document.getElementById('cellInput').value || '14');
+        if (currentMode === 'auto') {
+          fd.append('chars', document.getElementById('charsInput').value || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+        } else {
+          fd.append('word', document.getElementById('wordInput').value || 'VARSHEETHvarsheeth');
+        }
       }
 
       resetSteps();
