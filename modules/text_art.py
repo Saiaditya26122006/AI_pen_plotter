@@ -5,17 +5,17 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 _FONT_CANDIDATES = [
-    "C:/Windows/Fonts/arialbd.ttf",
-    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",   # Arial Bold  (best for plotter — thick strokes)
+    "C:/Windows/Fonts/impact.ttf",
     "C:/Windows/Fonts/calibrib.ttf",
     "C:/Windows/Fonts/verdanab.ttf",
-    "C:/Windows/Fonts/impact.ttf",
+    "C:/Windows/Fonts/arial.ttf",
     "C:/Windows/Fonts/times.ttf",
 ]
-_RENDER_SIZE = 80  # render letters at this pixel height for skeleton extraction
+_RENDER_PX = 120   # render each letter at this height — higher = more contour detail
 
 
-def _load_font(size: int = 80) -> ImageFont.FreeTypeFont:
+def _load_font(size: int) -> ImageFont.FreeTypeFont:
     for path in _FONT_CANDIDATES:
         if os.path.exists(path):
             try:
@@ -25,9 +25,9 @@ def _load_font(size: int = 80) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _render_binary(letter: str, size: int = 80) -> np.ndarray:
-    """Render one letter as white-on-black binary numpy array."""
-    pad = size
+def _render_binary(letter: str, size: int = _RENDER_PX) -> np.ndarray:
+    """Render a letter as a white-on-black tight binary image (minimal padding)."""
+    pad = size // 6          # tight padding — was size//2, which wasted 75% of canvas
     canvas = size + pad * 2
     img = Image.new("L", (canvas, canvas), 0)
     draw = ImageDraw.Draw(img)
@@ -43,84 +43,76 @@ def _render_binary(letter: str, size: int = 80) -> np.ndarray:
     return (arr > 64).astype(np.uint8) * 255
 
 
-def _trace_skeleton(skeleton: np.ndarray) -> list:
+def _letter_to_outline_strokes(letter: str) -> list:
     """
-    Trace a skeleton (1-pixel-wide) image into ordered point paths.
-    Each path is a list of (x, y) integer pixel coordinates forming one
-    continuous pen stroke.
+    Render a letter, find its outline contours, normalize to bounding box.
+
+    Returns list of stroke paths — each path is a list of (x, y) in [0, 1]
+    normalized coordinates, with aspect ratio preserved.
+
+    Uses outline tracing (not skeleton) so letters look correct even at
+    very small scale (6–8 px on screen).
     """
-    ys, xs = np.where(skeleton > 0)
-    if len(xs) == 0:
+    binary = _render_binary(letter, _RENDER_PX)
+    if not np.any(binary):
         return []
 
-    remaining = set(zip(xs.tolist(), ys.tolist()))
-    paths: list = []
+    # Slight close to fill any anti-alias gaps at the rendered edges
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k)
 
-    while remaining:
-        # Start each new path from the topmost-leftmost unvisited pixel
-        start = min(remaining, key=lambda p: (p[1], p[0]))
-        path = [start]
-        remaining.discard(start)
+    # RETR_CCOMP: outer boundary + holes (e.g. inside of 'A', 'e', 'a')
+    contours, _ = cv2.findContours(binary, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
-        while True:
-            cx, cy = path[-1]
-            best = None
-            best_d = 3  # max squared distance for 8-connectivity is 2
-            for dy in (-1, 0, 1):
-                for dx in (-1, 0, 1):
-                    if dx == 0 and dy == 0:
-                        continue
-                    nb = (cx + dx, cy + dy)
-                    if nb in remaining:
-                        d = dx * dx + dy * dy
-                        if d < best_d:
-                            best_d = d
-                            best = nb
-            if best is None:
-                break
-            path.append(best)
-            remaining.discard(best)
+    if not contours:
+        return []
 
-        if len(path) >= 2:
-            paths.append(path)
+    # Simplify each contour with Douglas-Peucker before normalising
+    epsilon = max(1.0, _RENDER_PX * 0.015)   # 1.5% of render height
+    simplified = []
+    for c in contours:
+        s = cv2.approxPolyDP(c, epsilon=epsilon, closed=True)
+        if len(s) >= 2:
+            simplified.append(s.reshape(-1, 2))
 
-    return paths
+    if not simplified:
+        return []
+
+    # ── Compute ACTUAL letter bounding box (not canvas size) ──────────────
+    # This is the critical fix: old code divided by canvas size (160px),
+    # meaning letters were only 35–40% of their intended size on paper.
+    all_pts = np.vstack(simplified)
+    x_min, y_min = all_pts.min(axis=0).astype(float)
+    x_max, y_max = all_pts.max(axis=0).astype(float)
+    x_range = max(1.0, x_max - x_min)
+    y_range = max(1.0, y_max - y_min)
+    # Normalise by height so letter fills [0,1] vertically
+    norm = y_range
+
+    strokes = []
+    for pts in simplified:
+        path = [((float(p[0]) - x_min) / norm,
+                 (float(p[1]) - y_min) / norm) for p in pts]
+        # Close the contour so the outline is complete
+        path.append(path[0])
+        strokes.append(path)
+
+    return strokes
 
 
 def precompute_strokes(word: str) -> dict:
     """
-    Pre-render and skeleton-trace every unique character in word.
+    Pre-render and outline-trace every unique character in word.
     Returns dict: char → list of normalized stroke paths.
-    Each stroke path = list of (x, y) in [0.0, 1.0] normalized coords.
     """
     cache: dict = {}
-    unique_chars = sorted(set(word))
-    print(f"  Pre-rendering {len(unique_chars)} unique characters...")
-
-    for ch in unique_chars:
-        binary = _render_binary(ch, _RENDER_SIZE)
-
-        if not np.any(binary):
-            cache[ch] = []
-            continue
-
-        # Dilate slightly to ensure stroke connectivity before thinning
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        binary = cv2.dilate(binary, k, iterations=1)
-
-        # Thin to 1-pixel skeleton
-        if hasattr(cv2, "ximgproc") and hasattr(cv2.ximgproc, "thinning"):
-            skel = cv2.ximgproc.thinning(binary)
-        else:
-            skel = cv2.erode(binary, k, iterations=4)
-
-        paths = _trace_skeleton(skel)
-
-        h, w = skel.shape
-        norm = float(max(h, w))
-        norm_paths = [[(px / norm, py / norm) for px, py in p] for p in paths]
-        cache[ch] = norm_paths
-
+    unique = sorted(set(word))
+    print(f"  Pre-rendering {len(unique)} characters: {unique}")
+    for ch in unique:
+        strokes = _letter_to_outline_strokes(ch)
+        cache[ch] = strokes
+        pts_total = sum(len(s) for s in strokes)
+        print(f"    '{ch}': {len(strokes)} contours, {pts_total} pts")
     return cache
 
 
@@ -132,23 +124,28 @@ def text_art_gcode(
     to_mm_fn,
     img_w: int,
     img_h: int,
-    cell_h: int = 14,
+    cell_h: int = 20,
     max_scale: float = 1.0,
-    min_scale: float = 0.22,
-    skip_brightness: int = 218,
+    min_scale: float = 0.28,
+    skip_brightness: int = 215,
+    gamma: float = 1.6,
 ) -> list:
     """
-    Tile the image with letters from word, with letter height proportional
-    to local darkness.
+    Tile the image with letters from word.
+    Letter height scales with local darkness:
+        dark  → max_scale × cell_h  (big letter)
+        light → min_scale × cell_h  (tiny letter)
+        white → blank
 
-    Dark pixel   → big letter (max_scale × cell_h pixels tall)
-    Light pixel  → tiny letter (min_scale × cell_h pixels tall)
-    Very bright  → blank (no letter drawn)
-    Background   → blank (outside person mask)
+    gamma > 1 sharpens the dark/light contrast in letter sizing.
     """
     lines: list = []
     letter_idx = 0
     n = len(word)
+
+    # Pre-build a contrast-enhanced gray using CLAHE for better tonal separation
+    clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
+    gray_c = clahe.apply(gray)
 
     row_y = cell_h // 2
 
@@ -160,11 +157,11 @@ def text_art_gcode(
             y0, y1 = max(0, row_y - r), min(img_h, row_y + r)
             x0, x1 = max(0, col_x - r), min(img_w, col_x + r)
 
-            gray_reg = gray[y0:y1, x0:x1]
+            gray_reg = gray_c[y0:y1, x0:x1]
             mask_reg = person_mask[y0:y1, x0:x1]
 
             if gray_reg.size == 0:
-                col_x += cell_h // 2
+                col_x += cell_h
                 continue
 
             brightness = float(np.mean(gray_reg))
@@ -173,27 +170,28 @@ def text_art_gcode(
             letter = word[letter_idx % n]
             letter_idx += 1
 
-            # Skip background and near-white regions
+            # Skip bright / background areas
             if brightness > skip_brightness or person_frac < 0.25:
                 col_x += int(cell_h * 0.55) + 1
                 continue
 
-            # Brightness → letter scale
+            # Brightness → letter scale with gamma contrast boost
             t = float(np.clip(brightness / skip_brightness, 0.0, 1.0))
+            t = t ** (1.0 / gamma)          # gamma > 1 → bigger dark letters
             scale = max_scale * (1.0 - t) + min_scale * t
-            lh = max(3, int(scale * cell_h))   # letter height in pixels
-            lw = max(2, int(lh * 0.62))         # letter width in pixels
+            lh = max(4, int(scale * cell_h))   # letter height in image pixels
+            lw = max(3, int(lh * 0.60))        # letter width  in image pixels
 
             strokes = stroke_cache.get(letter, [])
-            top_y = row_y - lh // 2             # top edge of letter in image pixels
+            top_y = row_y - lh // 2            # top edge of letter in image pixels
 
             for stroke in strokes:
                 if len(stroke) < 2:
                     continue
 
-                sx, sy = stroke[0]
-                px0 = col_x + sx * lh
-                py0 = top_y + sy * lh
+                sx0, sy0 = stroke[0]
+                px0 = col_x + sx0 * lh
+                py0 = top_y + sy0 * lh
                 xm, ym = to_mm_fn(px0, py0)
                 lines += ["G0 Z5", f"G0 X{xm:.3f} Y{ym:.3f}", "G1 Z0 F100"]
 
