@@ -3,7 +3,7 @@ import os
 from flask import Flask, jsonify, render_template, request, send_file
 
 from modules.advanced_pipeline import process_image_full_pipeline
-
+from modules.text_pipeline import process_text_art
 
 app = Flask(__name__)
 
@@ -11,7 +11,6 @@ PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 INPUT_DIR = os.path.join(PROJECT_ROOT, "input")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 UPLOADED_PATH = os.path.join(INPUT_DIR, "uploaded.png")
-GCODE_PATH = os.path.join(OUTPUT_DIR, "drawing.gcode")
 
 
 @app.route("/", methods=["GET"])
@@ -25,23 +24,45 @@ def process():
     if file is None or file.filename == "":
         return jsonify({"status": "error", "message": "No image uploaded"}), 400
 
+    style = request.form.get("style", "text")
+    word = request.form.get("word", "VARSHEETHvarsheeth").strip() or "VARSHEETHvarsheeth"
+    try:
+        cell_h = int(request.form.get("cell_h", 14))
+        cell_h = max(6, min(cell_h, 40))
+    except ValueError:
+        cell_h = 14
+
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     file.save(UPLOADED_PATH)
 
     try:
-        gcode_string = process_image_full_pipeline(UPLOADED_PATH)
+        if style == "stipple":
+            gcode = process_image_full_pipeline(UPLOADED_PATH)
+            filename = "drawing.gcode"
+        else:
+            gcode = process_text_art(UPLOADED_PATH, word=word, cell_h=cell_h)
+            filename = "drawing_text.gcode"
     except Exception as exc:
         return jsonify({"status": "error", "message": str(exc)}), 500
 
-    return jsonify({"status": "done", "gcode_preview": gcode_string[:2000]})
+    draw_moves = sum(1 for ln in gcode.splitlines() if ln.startswith("G1 X"))
+    return jsonify({
+        "status": "done",
+        "style": style,
+        "draw_moves": draw_moves,
+        "filename": filename,
+        "gcode_preview": gcode[:2000],
+    })
 
 
 @app.route("/download", methods=["GET"])
 def download():
-    if not os.path.isfile(GCODE_PATH):
-        return jsonify({"status": "error", "message": "G-code file not found"}), 404
-    return send_file(GCODE_PATH, as_attachment=True, download_name="drawing.gcode")
+    filename = request.args.get("file", "drawing_text.gcode")
+    path = os.path.join(OUTPUT_DIR, filename)
+    if not os.path.isfile(path):
+        return jsonify({"status": "error", "message": "File not found"}), 404
+    return send_file(path, as_attachment=True, download_name=filename)
 
 
 if __name__ == "__main__":

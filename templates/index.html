@@ -7,150 +7,193 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: Arial, sans-serif; margin: 2rem auto; max-width: 860px; background: #f5f5f5; color: #222; }
-    h1 { margin-bottom: 0.25rem; font-size: 1.6rem; }
-    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
-    .card { background: #fff; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
-    .row { margin-bottom: 0.75rem; }
-    label { font-weight: bold; display: block; margin-bottom: 0.3rem; font-size: 0.9rem; }
-    input[type=file] { width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; background: #fafafa; }
-    .btn-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-    button { padding: 0.55rem 1.2rem; border: none; border-radius: 5px; cursor: pointer; font-size: 0.95rem; font-weight: bold; }
-    #processBtn { background: #1a73e8; color: #fff; }
-    #processBtn:disabled { background: #aaa; cursor: not-allowed; }
-    #downloadBtn { background: #2e7d32; color: #fff; display: none; text-decoration: none; }
-    .status-bar { padding: 0.5rem 0.75rem; border-radius: 5px; background: #e8f0fe; font-size: 0.9rem; }
+    h1 { margin-bottom: 0.2rem; font-size: 1.6rem; }
+    .subtitle { color: #666; font-size: 0.88rem; margin-bottom: 1.4rem; }
+    .card { background: #fff; border-radius: 8px; padding: 1.2rem 1.4rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+    .card h2 { font-size: 1rem; margin: 0 0 .8rem; color: #333; border-bottom: 1px solid #eee; padding-bottom: .4rem; }
+    label { font-size: 0.88rem; font-weight: bold; display: block; margin-bottom: .3rem; }
+    input[type=file], input[type=text], input[type=number], select {
+      width: 100%; padding: .4rem .5rem; border: 1px solid #ccc; border-radius: 4px;
+      font-size: .9rem; margin-bottom: .7rem; background: #fafafa;
+    }
+    .style-row { display: flex; gap: .7rem; margin-bottom: .7rem; }
+    .style-btn { flex: 1; padding: .5rem; border: 2px solid #ccc; border-radius: 6px;
+      cursor: pointer; font-size: .9rem; background: #fff; text-align: center; transition: all .15s; }
+    .style-btn.active { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; font-weight: bold; }
+    #textOptions { display: block; }
+    #stippleOptions { display: none; }
+    .btn-row { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; }
+    button.primary { padding: .55rem 1.3rem; border: none; border-radius: 5px; cursor: pointer;
+      font-size: .95rem; font-weight: bold; background: #1a73e8; color: #fff; }
+    button.primary:disabled { background: #aaa; cursor: not-allowed; }
+    a.dl-btn { background: #2e7d32; color: #fff; padding: .5rem 1.1rem; border-radius: 5px;
+      text-decoration: none; font-weight: bold; font-size: .9rem; display: none; }
+    .status-bar { padding: .5rem .8rem; border-radius: 5px; background: #e8f0fe; font-size: .88rem; margin-bottom: .6rem; }
     .status-bar.error { background: #fce8e6; color: #c62828; }
     .status-bar.done  { background: #e6f4ea; color: #2e7d32; }
     .steps { list-style: none; padding: 0; margin: 0; }
-    .steps li { padding: 0.3rem 0; font-size: 0.88rem; color: #777; display: flex; align-items: center; gap: 0.5rem; }
+    .steps li { padding: .25rem 0; font-size: .86rem; color: #888; display: flex; align-items: center; gap: .5rem; }
     .steps li.active { color: #1a73e8; font-weight: bold; }
     .steps li.done   { color: #2e7d32; }
-    .dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
     .dot.active { background: #1a73e8; }
     .dot.done   { background: #2e7d32; }
-    textarea { width: 100%; height: 220px; font-family: monospace; font-size: 0.8rem; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; resize: vertical; }
-    .preview-img { max-width: 100%; border-radius: 6px; margin-top: 0.5rem; display: none; }
+    textarea { width: 100%; height: 200px; font-family: monospace; font-size: .78rem;
+      border: 1px solid #ccc; border-radius: 4px; padding: .5rem; resize: vertical; }
+    .info { font-size: .8rem; color: #888; margin-top: -.4rem; margin-bottom: .6rem; }
   </style>
 </head>
 <body>
   <h1>AI Pen Plotter</h1>
-  <p class="subtitle">4-layer portrait pipeline: HED outlines · Voronoi stippling · Region hatching · Face emphasis</p>
+  <p class="subtitle">Portrait → G-code · YOLOv8 person detection · Choose your drawing style</p>
 
+  <!-- Upload -->
   <div class="card">
-    <div class="row">
-      <label for="imageInput">Upload portrait photo</label>
-      <input id="imageInput" type="file" accept="image/*">
+    <h2>1 · Upload Image</h2>
+    <label for="imageInput">Portrait photo</label>
+    <input id="imageInput" type="file" accept="image/*">
+  </div>
+
+  <!-- Style selector -->
+  <div class="card">
+    <h2>2 · Drawing Style</h2>
+    <div class="style-row">
+      <div class="style-btn active" id="btnText" onclick="setStyle('text')">
+        <strong>Text Art</strong><br><small>Fill face with a word</small>
+      </div>
+      <div class="style-btn" id="btnStipple" onclick="setStyle('stipple')">
+        <strong>Stipple Art</strong><br><small>4-layer dot + hatch</small>
+      </div>
     </div>
-    <div class="btn-row">
-      <button id="processBtn">Generate G-code</button>
-      <a id="downloadBtn" href="/download"><button type="button">Download G-code</button></a>
+
+    <!-- Text art options -->
+    <div id="textOptions">
+      <label for="wordInput">Word / phrase to repeat</label>
+      <input id="wordInput" type="text" value="VARSHEETHvarsheeth" placeholder="e.g. VARSHEETHvarsheeth">
+      <p class="info">Uppercase = large letters in shadows · lowercase = small letters in midtones</p>
+      <label for="cellInput">Letter row height (px) — lower = finer detail</label>
+      <input id="cellInput" type="number" value="14" min="6" max="40">
+    </div>
+
+    <!-- Stipple art options (no extra params needed) -->
+    <div id="stippleOptions">
+      <p class="info">4-layer pipeline: HED outlines · Voronoi stippling · ETF hair hatching · Face feature emphasis</p>
     </div>
   </div>
 
+  <!-- Generate -->
   <div class="card">
-    <div class="row">
-      <div id="statusBar" class="status-bar">Idle — upload an image and click Generate</div>
+    <h2>3 · Generate</h2>
+    <div class="btn-row">
+      <button class="primary" id="processBtn">Generate G-code</button>
+      <a class="dl-btn" id="downloadBtn" href="#">Download G-code</a>
     </div>
-    <ul class="steps">
-      <li id="s1"><span class="dot" id="d1"></span> YOLOv8 multi-person detection</li>
-      <li id="s2"><span class="dot" id="d2"></span> Layer 1: HED edge outlines</li>
-      <li id="s3"><span class="dot" id="d3"></span> Layer 2: Weighted Voronoi stippling</li>
-      <li id="s4"><span class="dot" id="d4"></span> Layer 3: Region-aware hatching (hair / clothes)</li>
-      <li id="s5"><span class="dot" id="d5"></span> Layer 4: Face feature emphasis</li>
+  </div>
+
+  <!-- Status + progress -->
+  <div class="card">
+    <div id="statusBar" class="status-bar">Idle — upload an image and click Generate</div>
+    <ul class="steps" id="stepList">
+      <li id="s1"><span class="dot" id="d1"></span> <span id="sl1">YOLOv8 person detection</span></li>
+      <li id="s2"><span class="dot" id="d2"></span> <span id="sl2">Pre-render letter skeletons</span></li>
+      <li id="s3"><span class="dot" id="d3"></span> <span id="sl3">Tile image with text</span></li>
+      <li id="s4"><span class="dot" id="d4"></span> <span id="sl4">Save G-code</span></li>
     </ul>
   </div>
 
+  <!-- Preview -->
   <div class="card">
-    <label>G-code preview</label>
-    <textarea id="preview" placeholder="G-code will appear here after processing..." readonly></textarea>
+    <h2>G-code preview</h2>
+    <textarea id="preview" placeholder="G-code appears here after processing..." readonly></textarea>
   </div>
 
   <script>
-    const imageInput = document.getElementById("imageInput");
-    const processBtn = document.getElementById("processBtn");
-    const downloadBtn = document.getElementById("downloadBtn");
-    const statusBar  = document.getElementById("statusBar");
-    const previewEl  = document.getElementById("preview");
-    const steps = [1,2,3,4,5].map(i => ({
-      li: document.getElementById("s"+i),
-      dot: document.getElementById("d"+i),
-    }));
+    let currentStyle = 'text';
+    let dlFilename = 'drawing_text.gcode';
 
-    function resetSteps() {
-      steps.forEach(({li, dot}) => {
-        li.className = "";
-        dot.className = "dot";
-      });
+    function setStyle(s) {
+      currentStyle = s;
+      document.getElementById('btnText').className    = 'style-btn' + (s === 'text'    ? ' active' : '');
+      document.getElementById('btnStipple').className = 'style-btn' + (s === 'stipple' ? ' active' : '');
+      document.getElementById('textOptions').style.display    = s === 'text'    ? 'block' : 'none';
+      document.getElementById('stippleOptions').style.display = s === 'stipple' ? 'block' : 'none';
+
+      // Update step labels
+      if (s === 'stipple') {
+        ['YOLOv8 detection', 'HED outlines', 'Voronoi stippling', 'Region hatching + face emphasis'].forEach((t, i) => {
+          document.getElementById('sl' + (i+1)).textContent = t;
+        });
+      } else {
+        ['YOLOv8 detection', 'Pre-render letter skeletons', 'Tile image with text', 'Save G-code'].forEach((t, i) => {
+          document.getElementById('sl' + (i+1)).textContent = t;
+        });
+      }
     }
 
-    function setStep(n) {
-      steps.forEach(({li, dot}, i) => {
-        if (i < n - 1) { li.className = "done";  dot.className = "dot done"; }
-        else if (i === n - 1) { li.className = "active"; dot.className = "dot active"; }
-        else { li.className = ""; dot.className = "dot"; }
-      });
+    const steps = [1,2,3,4].map(i => ({ li: document.getElementById('s'+i), dot: document.getElementById('d'+i) }));
+
+    function resetSteps() { steps.forEach(({li, dot}) => { li.className=''; dot.className='dot'; }); }
+    function setStep(n)   { steps.forEach(({li, dot}, i) => {
+      if (i < n-1)      { li.className='done';   dot.className='dot done'; }
+      else if (i===n-1) { li.className='active'; dot.className='dot active'; }
+      else              { li.className='';        dot.className='dot'; }
+    }); }
+    function allDone() { steps.forEach(({li, dot}) => { li.className='done'; dot.className='dot done'; }); }
+    function setStatus(msg, type='') {
+      const el = document.getElementById('statusBar');
+      el.textContent = msg;
+      el.className = 'status-bar' + (type ? ' '+type : '');
     }
 
-    function allDone() {
-      steps.forEach(({li, dot}) => { li.className = "done"; dot.className = "dot done"; });
-    }
-
-    function setStatus(msg, type="") {
-      statusBar.textContent = msg;
-      statusBar.className = "status-bar" + (type ? " " + type : "");
-    }
-
-    // Animate step labels while server processes (server logs go to console, not browser)
     let stepTimer = null;
+    const stepTimes = { text: 8000, stipple: 15000 };
+
     function animateSteps() {
-      let n = 1;
-      setStep(n);
-      stepTimer = setInterval(() => {
-        n++;
-        if (n <= 5) setStep(n);
-      }, 12000); // ~12 s per layer estimate
+      let n = 1; setStep(n);
+      stepTimer = setInterval(() => { if (++n <= 4) setStep(n); }, stepTimes[currentStyle] || 8000);
     }
 
-    processBtn.addEventListener("click", async () => {
-      if (!imageInput.files || imageInput.files.length === 0) {
-        setStatus("Please choose an image first.", "error");
-        return;
+    document.getElementById('processBtn').addEventListener('click', async () => {
+      const files = document.getElementById('imageInput').files;
+      if (!files || files.length === 0) { setStatus('Please choose an image first.', 'error'); return; }
+
+      const fd = new FormData();
+      fd.append('image', files[0]);
+      fd.append('style', currentStyle);
+      if (currentStyle === 'text') {
+        fd.append('word', document.getElementById('wordInput').value || 'VARSHEETHvarsheeth');
+        fd.append('cell_h', document.getElementById('cellInput').value || '14');
       }
 
-      const formData = new FormData();
-      formData.append("image", imageInput.files[0]);
-
       resetSteps();
-      previewEl.value = "";
-      downloadBtn.style.display = "none";
-      processBtn.disabled = true;
-      setStatus("Uploading and processing — this takes 1–5 minutes...");
+      document.getElementById('preview').value = '';
+      document.getElementById('downloadBtn').style.display = 'none';
+      document.getElementById('processBtn').disabled = true;
+      setStatus('Processing… this takes 1–4 minutes');
       animateSteps();
 
       try {
-        const response = await fetch("/process", { method: "POST", body: formData });
-        const data = await response.json();
-
+        const resp = await fetch('/process', { method: 'POST', body: fd });
+        const data = await resp.json();
         clearInterval(stepTimer);
 
-        if (!response.ok) {
-          setStatus("Error: " + (data.message || "Processing failed"), "error");
-          resetSteps();
-          return;
-        }
+        if (!resp.ok) { setStatus('Error: ' + (data.message || 'Failed'), 'error'); resetSteps(); return; }
 
         allDone();
-        previewEl.value = data.gcode_preview || "";
-        const lines = (data.gcode_preview || "").split("\n").filter(l => l.startsWith("G1 X")).length;
-        setStatus(`Done — ${lines}+ draw moves generated`, "done");
-        downloadBtn.style.display = "inline-block";
+        document.getElementById('preview').value = data.gcode_preview || '';
+        setStatus(`Done — ${data.draw_moves} draw moves (${data.style} style)`, 'done');
 
-      } catch (err) {
+        dlFilename = data.filename;
+        const dlBtn = document.getElementById('downloadBtn');
+        dlBtn.href = '/download?file=' + encodeURIComponent(data.filename);
+        dlBtn.style.display = 'inline-block';
+
+      } catch(err) {
         clearInterval(stepTimer);
-        setStatus("Error: " + err.message, "error");
+        setStatus('Error: ' + err.message, 'error');
         resetSteps();
       } finally {
-        processBtn.disabled = false;
+        document.getElementById('processBtn').disabled = false;
       }
     });
   </script>
