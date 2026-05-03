@@ -42,7 +42,7 @@ def process():
     try:
         if style == "stipple":
             gcode = process_image_full_pipeline(UPLOADED_PATH)
-            filename = "drawing.gcode"
+            filename = "drawing_stipple.gcode"
         else:
             gcode = process_text_art(UPLOADED_PATH, word=word, cell_h=cell_h, mode=mode, chars=chars)
             filename = "drawing_text.gcode"

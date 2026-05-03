@@ -5,13 +5,13 @@ import sys
 def main() -> None:
     """
     Usage:
-        python main.py <image>                              # text art word mode (default)
-        python main.py <image> --style text                 # text art word mode
-        python main.py <image> --style stipple              # 4-layer stipple pipeline
-        python main.py <image> --style text --word HELLO
-        python main.py <image> --style text --cell 12
-        python main.py <image> --style text --mode auto               # A-Z brightness palette
-        python main.py <image> --style text --mode auto --chars ABCM  # custom char set
+        python main.py <image>                         # generate BOTH (default)
+        python main.py <image> --style both            # generate both explicitly
+        python main.py <image> --style text            # text art only (word mode)
+        python main.py <image> --style stipple         # stipple/points only
+        python main.py <image> --style text --mode auto              # A-Z brightness
+        python main.py <image> --style text --mode auto --chars ABCM
+        python main.py <image> --style text --word HELLO --cell 12
     """
     args = sys.argv[1:]
     if not args:
@@ -22,10 +22,10 @@ def main() -> None:
     if not os.path.isfile(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    style = "text"
-    word = "VARSHEETHvarsheeth"
+    style = "both"          # default: generate both outputs
+    word  = "VARSHEETHvarsheeth"
     cell_h = 14
-    mode = "word"
+    mode  = "auto"          # default for text: auto A-Z brightness mapping
     chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
     i = 1
@@ -44,23 +44,39 @@ def main() -> None:
             i += 1
 
     print(f"Image : {image_path}")
-    print(f"Style : {style}")
 
-    if style == "stipple":
+    do_text    = style in ("text", "both")
+    do_stipple = style in ("stipple", "both")
+
+    if do_stipple:
+        print("\n" + "="*50)
+        print("STIPPLE / POINTS PIPELINE")
+        print("="*50)
         from modules.advanced_pipeline import process_image_full_pipeline
-        gcode = process_image_full_pipeline(image_path)
-        out_name = "drawing.gcode"
-    else:
+        gcode_s = process_image_full_pipeline(image_path)
+        moves_s = sum(1 for ln in gcode_s.splitlines() if ln.startswith("G1 X"))
+        print(f"Stipple draw moves: {moves_s}  ->  output/drawing_stipple.gcode")
+
+    if do_text:
+        print("\n" + "="*50)
+        print("TEXT ART PIPELINE")
+        print("="*50)
         from modules.text_pipeline import process_text_art
         if mode == "auto":
             print(f"Mode  : auto A-Z  |  chars={chars}  |  cell_h={cell_h}")
         else:
             print(f"Mode  : word  |  word={word}  |  cell_h={cell_h}")
-        gcode = process_text_art(image_path, word=word, cell_h=cell_h, mode=mode, chars=chars)
-        out_name = "drawing_text.gcode"
+        gcode_t = process_text_art(image_path, word=word, cell_h=cell_h, mode=mode, chars=chars)
+        moves_t = sum(1 for ln in gcode_t.splitlines() if ln.startswith("G1 X"))
+        print(f"Text draw moves   : {moves_t}  ->  output/drawing_text.gcode")
 
-    draw_moves = sum(1 for ln in gcode.splitlines() if ln.startswith("G1 X"))
-    print(f"\nTotal draw moves: {draw_moves}  →  output/{out_name}")
+    print("\n" + "="*50)
+    print("Output files in output/ folder:")
+    if do_stipple:
+        print("  drawing_stipple.gcode  <-- points/dots design")
+    if do_text:
+        print("  drawing_text.gcode     <-- letter/text design")
+    print("Open both in NC Viewer and pick the one you prefer.")
 
 
 if __name__ == "__main__":

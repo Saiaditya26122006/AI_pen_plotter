@@ -271,7 +271,7 @@ def process_image_full_pipeline(image_path: str) -> str:
     gcode.append("M2")
     gcode_str = "\n".join(gcode) + "\n"
 
-    out_path = os.path.join(_OUTPUT_DIR, "drawing.gcode")
+    out_path = os.path.join(_OUTPUT_DIR, "drawing_stipple.gcode")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(gcode_str)
 
