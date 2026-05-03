@@ -4,6 +4,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 from modules.advanced_pipeline import process_image_full_pipeline
 from modules.text_pipeline import process_text_art
+from modules.wave_pipeline import process_wave_art
 
 app = Flask(__name__)
 
@@ -25,8 +26,8 @@ def process():
         return jsonify({"status": "error", "message": "No image uploaded"}), 400
 
     style = request.form.get("style", "text")
-    word = request.form.get("word", "VARSHEETHvarsheeth").strip() or "VARSHEETHvarsheeth"
-    mode = request.form.get("mode", "word")   # 'word' or 'auto'
+    word  = request.form.get("word", "VARSHEETHvarsheeth").strip() or "VARSHEETHvarsheeth"
+    mode  = request.form.get("mode", "auto")
     chars = (request.form.get("chars", "ABCDEFGHIJKLMNOPQRSTUVWXYZ").strip().upper()
              or "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     try:
@@ -34,6 +35,11 @@ def process():
         cell_h = max(6, min(cell_h, 40))
     except ValueError:
         cell_h = 14
+    try:
+        row_spacing = int(request.form.get("row_spacing", 8))
+        row_spacing = max(4, min(row_spacing, 20))
+    except ValueError:
+        row_spacing = 8
 
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -41,20 +47,24 @@ def process():
 
     try:
         if style == "stipple":
-            gcode = process_image_full_pipeline(UPLOADED_PATH)
+            gcode    = process_image_full_pipeline(UPLOADED_PATH)
             filename = "drawing_stipple.gcode"
+        elif style == "wave":
+            gcode    = process_wave_art(UPLOADED_PATH, row_spacing=row_spacing)
+            filename = "drawing_wave.gcode"
         else:
-            gcode = process_text_art(UPLOADED_PATH, word=word, cell_h=cell_h, mode=mode, chars=chars)
+            gcode    = process_text_art(UPLOADED_PATH, word=word, cell_h=cell_h,
+                                        mode=mode, chars=chars)
             filename = "drawing_text.gcode"
     except Exception as exc:
         return jsonify({"status": "error", "message": str(exc)}), 500
 
     draw_moves = sum(1 for ln in gcode.splitlines() if ln.startswith("G1 X"))
     return jsonify({
-        "status": "done",
-        "style": style,
-        "draw_moves": draw_moves,
-        "filename": filename,
+        "status":        "done",
+        "style":         style,
+        "draw_moves":    draw_moves,
+        "filename":      filename,
         "gcode_preview": gcode[:2000],
     })
 

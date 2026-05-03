@@ -20,8 +20,6 @@
     .style-btn { flex: 1; padding: .5rem; border: 2px solid #ccc; border-radius: 6px;
       cursor: pointer; font-size: .9rem; background: #fff; text-align: center; transition: all .15s; }
     .style-btn.active { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; font-weight: bold; }
-    #textOptions { display: block; }
-    #stippleOptions { display: none; }
     .btn-row { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; }
     button.primary { padding: .55rem 1.3rem; border: none; border-radius: 5px; cursor: pointer;
       font-size: .95rem; font-weight: bold; background: #1a73e8; color: #fff; }
@@ -45,24 +43,27 @@
 </head>
 <body>
   <h1>AI Pen Plotter</h1>
-  <p class="subtitle">Portrait → G-code · YOLOv8 person detection · Choose your drawing style</p>
+  <p class="subtitle">Portrait → G-code &middot; YOLOv8 person detection &middot; 3 drawing styles</p>
 
   <!-- Upload -->
   <div class="card">
-    <h2>1 · Upload Image</h2>
+    <h2>1 &middot; Upload Image</h2>
     <label for="imageInput">Portrait photo</label>
     <input id="imageInput" type="file" accept="image/*">
   </div>
 
   <!-- Style selector -->
   <div class="card">
-    <h2>2 · Drawing Style</h2>
+    <h2>2 &middot; Drawing Style</h2>
     <div class="style-row">
       <div class="style-btn active" id="btnText" onclick="setStyle('text')">
-        <strong>Text Art</strong><br><small>Fill face with a word</small>
+        <strong>Text Art</strong><br><small>A–Z brightness letters</small>
+      </div>
+      <div class="style-btn" id="btnWave" onclick="setStyle('wave')">
+        <strong>Wave Art</strong><br><small>Sine-wave modulation</small>
       </div>
       <div class="style-btn" id="btnStipple" onclick="setStyle('stipple')">
-        <strong>Stipple Art</strong><br><small>4-layer dot + hatch</small>
+        <strong>Stipple Art</strong><br><small>Voronoi dot shading</small>
       </div>
     </div>
 
@@ -70,41 +71,43 @@
     <div id="textOptions">
       <label>Letter mode</label>
       <div class="style-row" style="margin-bottom:.5rem">
-        <div class="style-btn active" id="btnWord" onclick="setMode('word')">
+        <div class="style-btn" id="btnWord" onclick="setMode('word')">
           <strong>Word repeat</strong><br><small>Cycle letters of a word</small>
         </div>
-        <div class="style-btn" id="btnAuto" onclick="setMode('auto')">
+        <div class="style-btn active" id="btnAuto" onclick="setMode('auto')">
           <strong>Auto A–Z</strong><br><small>Pick letter by brightness</small>
         </div>
       </div>
-
-      <!-- Word repeat sub-options -->
-      <div id="wordOpts">
+      <div id="wordOpts" style="display:none">
         <label for="wordInput">Word / phrase to repeat</label>
         <input id="wordInput" type="text" value="VARSHEETHvarsheeth" placeholder="e.g. VARSHEETHvarsheeth">
-        <p class="info">Uppercase = large letters in shadows · lowercase = small letters in midtones</p>
+        <p class="info">Uppercase = large letters in shadows &middot; lowercase = small in midtones</p>
       </div>
-
-      <!-- Auto A-Z sub-options -->
-      <div id="autoOpts" style="display:none">
-        <label for="charsInput">Character set (dark→light auto-sorted)</label>
+      <div id="autoOpts">
+        <label for="charsInput">Character set (auto-sorted dark to light)</label>
         <input id="charsInput" type="text" value="ABCDEFGHIJKLMNOPQRSTUVWXYZ" placeholder="ABCDEFGHIJKLMNOPQRSTUVWXYZ">
-        <p class="info">Dark areas → heaviest letter (M, W, B) · Light areas → thinnest letter (I, L, T)</p>
+        <p class="info">Dark areas get heaviest letter (M, W, B) &middot; Light areas get thinnest (I, L, T)</p>
       </div>
-
-      <label for="cellInput">Letter row height (px) — lower = finer detail</label>
+      <label for="cellInput">Letter row height (px) &mdash; lower = finer detail</label>
       <input id="cellInput" type="number" value="14" min="6" max="40">
     </div>
 
-    <!-- Stipple art options (no extra params needed) -->
-    <div id="stippleOptions">
-      <p class="info">4-layer pipeline: HED outlines · Voronoi stippling · ETF hair hatching · Face feature emphasis</p>
+    <!-- Wave art options -->
+    <div id="waveOptions" style="display:none">
+      <p class="info">Horizontal sine waves scan the face — dark areas produce tall peaks, bright areas stay flat. Looks like a Joy Division album cover.</p>
+      <label for="rowSpacingInput">Row spacing (px) &mdash; lower = finer detail, longer to plot</label>
+      <input id="rowSpacingInput" type="number" value="8" min="4" max="20">
+    </div>
+
+    <!-- Stipple art options -->
+    <div id="stippleOptions" style="display:none">
+      <p class="info">4-layer pipeline: HED outlines &middot; Voronoi stippling &middot; ETF hair hatching &middot; Face feature emphasis</p>
     </div>
   </div>
 
   <!-- Generate -->
   <div class="card">
-    <h2>3 · Generate</h2>
+    <h2>3 &middot; Generate</h2>
     <div class="btn-row">
       <button class="primary" id="processBtn">Generate G-code</button>
       <a class="dl-btn" id="downloadBtn" href="#">Download G-code</a>
@@ -113,11 +116,11 @@
 
   <!-- Status + progress -->
   <div class="card">
-    <div id="statusBar" class="status-bar">Idle — upload an image and click Generate</div>
+    <div id="statusBar" class="status-bar">Idle &mdash; upload an image and click Generate</div>
     <ul class="steps" id="stepList">
       <li id="s1"><span class="dot" id="d1"></span> <span id="sl1">YOLOv8 person detection</span></li>
-      <li id="s2"><span class="dot" id="d2"></span> <span id="sl2">Pre-render letter skeletons</span></li>
-      <li id="s3"><span class="dot" id="d3"></span> <span id="sl3">Tile image with text</span></li>
+      <li id="s2"><span class="dot" id="d2"></span> <span id="sl2">Step 2</span></li>
+      <li id="s3"><span class="dot" id="d3"></span> <span id="sl3">Step 3</span></li>
       <li id="s4"><span class="dot" id="d4"></span> <span id="sl4">Save G-code</span></li>
     </ul>
   </div>
@@ -130,8 +133,14 @@
 
   <script>
     let currentStyle = 'text';
-    let currentMode  = 'word';
-    let dlFilename = 'drawing_text.gcode';
+    let currentMode  = 'auto';
+    let dlFilename   = 'drawing_text.gcode';
+
+    const stepLabels = {
+      text:    ['YOLOv8 detection', 'Build brightness palette', 'Tile image with letters', 'Save G-code'],
+      wave:    ['YOLOv8 detection', 'Smooth brightness map', 'Generate wave scan lines', 'Save G-code'],
+      stipple: ['YOLOv8 detection', 'HED outlines', 'Voronoi stippling', 'Region hatching + emphasis'],
+    };
 
     function setMode(m) {
       currentMode = m;
@@ -143,25 +152,23 @@
 
     function setStyle(s) {
       currentStyle = s;
-      document.getElementById('btnText').className    = 'style-btn' + (s === 'text'    ? ' active' : '');
-      document.getElementById('btnStipple').className = 'style-btn' + (s === 'stipple' ? ' active' : '');
+      ['text','wave','stipple'].forEach(id => {
+        document.getElementById('btn' + id.charAt(0).toUpperCase() + id.slice(1)).className =
+          'style-btn' + (s === id ? ' active' : '');
+      });
       document.getElementById('textOptions').style.display    = s === 'text'    ? 'block' : 'none';
+      document.getElementById('waveOptions').style.display    = s === 'wave'    ? 'block' : 'none';
       document.getElementById('stippleOptions').style.display = s === 'stipple' ? 'block' : 'none';
 
-      // Update step labels
-      if (s === 'stipple') {
-        ['YOLOv8 detection', 'HED outlines', 'Voronoi stippling', 'Region hatching + face emphasis'].forEach((t, i) => {
-          document.getElementById('sl' + (i+1)).textContent = t;
-        });
-      } else {
-        ['YOLOv8 detection', 'Pre-render letter skeletons', 'Tile image with text', 'Save G-code'].forEach((t, i) => {
-          document.getElementById('sl' + (i+1)).textContent = t;
-        });
-      }
+      (stepLabels[s] || stepLabels.text).forEach((t, i) => {
+        document.getElementById('sl' + (i + 1)).textContent = t;
+      });
     }
 
-    const steps = [1,2,3,4].map(i => ({ li: document.getElementById('s'+i), dot: document.getElementById('d'+i) }));
+    // init labels
+    setStyle('text');
 
+    const steps = [1,2,3,4].map(i => ({ li: document.getElementById('s'+i), dot: document.getElementById('d'+i) }));
     function resetSteps() { steps.forEach(({li, dot}) => { li.className=''; dot.className='dot'; }); }
     function setStep(n)   { steps.forEach(({li, dot}, i) => {
       if (i < n-1)      { li.className='done';   dot.className='dot done'; }
@@ -172,12 +179,11 @@
     function setStatus(msg, type='') {
       const el = document.getElementById('statusBar');
       el.textContent = msg;
-      el.className = 'status-bar' + (type ? ' '+type : '');
+      el.className = 'status-bar' + (type ? ' ' + type : '');
     }
 
+    const stepTimes = { text: 8000, wave: 6000, stipple: 15000 };
     let stepTimer = null;
-    const stepTimes = { text: 8000, stipple: 15000 };
-
     function animateSteps() {
       let n = 1; setStep(n);
       stepTimer = setInterval(() => { if (++n <= 4) setStep(n); }, stepTimes[currentStyle] || 8000);
@@ -190,6 +196,7 @@
       const fd = new FormData();
       fd.append('image', files[0]);
       fd.append('style', currentStyle);
+
       if (currentStyle === 'text') {
         fd.append('mode', currentMode);
         fd.append('cell_h', document.getElementById('cellInput').value || '14');
@@ -198,6 +205,8 @@
         } else {
           fd.append('word', document.getElementById('wordInput').value || 'VARSHEETHvarsheeth');
         }
+      } else if (currentStyle === 'wave') {
+        fd.append('row_spacing', document.getElementById('rowSpacingInput').value || '8');
       }
 
       resetSteps();
@@ -216,7 +225,7 @@
 
         allDone();
         document.getElementById('preview').value = data.gcode_preview || '';
-        setStatus(`Done — ${data.draw_moves} draw moves (${data.style} style)`, 'done');
+        setStatus('Done — ' + data.draw_moves + ' draw moves (' + data.style + ' style)', 'done');
 
         dlFilename = data.filename;
         const dlBtn = document.getElementById('downloadBtn');
