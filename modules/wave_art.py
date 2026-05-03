@@ -10,88 +10,85 @@ def wave_art_gcode(
     img_w: int,
     img_h: int,
     row_spacing: int = 8,
-    wavelength: float = None,      # px; default = row_spacing * 5
-    max_amplitude: float = None,   # px; default = row_spacing * 0.88
-    min_amplitude: float = None,   # px; default = row_spacing * 0.04
-    smoothing: float = 5.0,        # horizontal Gaussian sigma in px
-    gamma: float = 1.4,
+    wavelength: float = None,       # px; default = row_spacing * 8
+    max_amplitude: float = None,    # px; default = row_spacing * 1.4
+    min_amplitude: float = 0.0,     # px; bright areas → completely flat
+    smoothing: float = 2.0,         # Gaussian sigma — lower keeps more face detail
+    gamma: float = 2.5,             # high gamma = dark areas get dramatically taller waves
 ) -> list:
     """
-    Joy-Division-style wave modulation G-code.
+    Joy-Division-style sine-wave portrait.
 
-    Each horizontal scan line is a sine wave whose amplitude encodes local brightness:
-        dark pixels  → tall wave (high amplitude)
-        bright pixels → nearly flat wave (low amplitude)
-
-    Quality features:
-    - 2D Gaussian pre-smoothing (horizontal + vertical) so waves follow face
-      contours smoothly rather than tracking pixel-level noise.
-    - Golden-ratio phase shift per row prevents vertical stripe artifacts.
-    - Bidirectional scan (L→R / R→L alternating) minimizes pen travel.
-    - Waves clip cleanly at person mask boundaries.
+    Fixes vs v1:
+    - All rows scan LEFT → RIGHT only (bidirectional caused a crisscross net).
+    - Local contrast normalization inside the person mask: the darkest area
+      of the face always maps to max_amplitude and the lightest always maps
+      to min_amplitude, regardless of absolute image brightness.
+      This makes eyes / shadows / hair produce tall dramatic peaks while
+      forehead highlights stay flat.
+    - Longer wavelength (8× row_spacing) for smoother, cleaner waves.
+    - Higher gamma (2.5) for more aggressive dark-area emphasis.
     """
     if wavelength is None:
-        wavelength = row_spacing * 5.0
+        wavelength = row_spacing * 8.0
     if max_amplitude is None:
-        max_amplitude = row_spacing * 0.88
-    if min_amplitude is None:
-        min_amplitude = row_spacing * 0.04
+        max_amplitude = row_spacing * 1.4
 
     # ── Contrast enhancement ──────────────────────────────────────────────
-    clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     gray_c = clahe.apply(gray)
 
-    # ── 2-D Gaussian pre-smooth ───────────────────────────────────────────
-    # sigma_y (vertical) = row_spacing/2  → blends adjacent scan bands
-    # sigma_x (horizontal) = smoothing    → smooths amplitude driver along row
-    gray_smooth = gaussian_filter(
-        gray_c.astype(np.float64),
-        sigma=[row_spacing * 0.5, smoothing],
-    )
+    # ── 2-D Gaussian smooth (mild — keeps face features sharp) ────────────
+    gray_f = gaussian_filter(gray_c.astype(np.float64), sigma=smoothing)
 
-    # ── Pre-smooth mask too (soft edges → cleaner wave clip) ──────────────
-    mask_smooth = gaussian_filter(
-        (person_mask > 0).astype(np.float64),
-        sigma=[row_spacing * 0.5, 2.0],
-    )
+    # ── Local contrast normalisation inside the person mask ───────────────
+    # Stretch the brightness range that actually exists on the person so
+    # the full amplitude range (0 → max_amplitude) is always used.
+    person_vals = gray_f[person_mask > 0]
+    if person_vals.size > 10:
+        p_dark  = np.percentile(person_vals, 3)   # darkest 3 %
+        p_light = np.percentile(person_vals, 97)  # lightest 97 %
+        span = max(p_light - p_dark, 1.0)
+        # gray_norm: 0 = darkest part of face, 1 = lightest part of face
+        gray_norm = np.clip((gray_f - p_dark) / span, 0.0, 1.0)
+    else:
+        gray_norm = np.clip(gray_f / 255.0, 0.0, 1.0)
 
+    # ── Smooth mask for clean wave clip at person boundary ────────────────
+    mask_f = gaussian_filter((person_mask > 0).astype(np.float64), sigma=2.0)
+
+    # ── Build amplitude map ───────────────────────────────────────────────
+    # t=0 (darkest) → max_amplitude   t=1 (lightest) → min_amplitude
+    t = gray_norm ** (1.0 / gamma)     # gamma > 1 makes dark areas dominate
+    amp_map = max_amplitude * (1.0 - t) + min_amplitude * t
+
+    # ── Scan lines ────────────────────────────────────────────────────────
     lines: list = []
-    row_ys = list(range(row_spacing // 2, img_h, row_spacing))
     xs = np.arange(img_w, dtype=np.float64)
 
-    for row_idx, row_y in enumerate(row_ys):
-        # Sample pre-smoothed rows
-        gray_row = gray_smooth[row_y, :]   # shape (img_w,)
-        mask_row = mask_smooth[row_y, :]   # shape (img_w,), values 0..1
+    for row_idx, row_y in enumerate(range(row_spacing // 2, img_h, row_spacing)):
+        amp_row  = amp_map[row_y, :]
+        mask_row = mask_f[row_y, :]
 
         if not (mask_row > 0.15).any():
             continue
 
-        # Gamma-corrected brightness → amplitude
-        t = np.clip(gray_row / 255.0, 0.0, 1.0) ** (1.0 / gamma)
-        amplitudes = max_amplitude * (1.0 - t) + min_amplitude * t
+        # Golden-ratio phase per row → prevents vertical stripes
+        phase = (row_idx * 0.6180339887 % 1.0) * 2.0 * np.pi
 
-        # Golden-ratio phase offset — prevents vertical stripes
-        phase = (row_idx * 0.6180339887) % 1.0 * 2.0 * np.pi
-
-        wave_dys = amplitudes * np.sin(2.0 * np.pi * xs / wavelength + phase)
+        wave_dys  = amp_row * np.sin(2.0 * np.pi * xs / wavelength + phase)
         actual_ys = np.clip(row_y + wave_dys, 0.0, img_h - 1.0)
 
-        # Bidirectional: odd rows scan right → left
-        x_range = range(img_w - 1, -1, -1) if row_idx % 2 else range(img_w)
-
+        # ALL rows LEFT → RIGHT — no bidirectional (bidirectional caused crisscross net)
         in_stroke = False
-        for x in x_range:
-            inside = mask_row[x] > 0.15
-
-            if not inside:
+        for x in range(img_w):
+            if mask_row[x] <= 0.15:
                 if in_stroke:
                     lines.append("G0 Z5")
                     in_stroke = False
                 continue
 
             xm, ym = to_mm_fn(float(x), float(actual_ys[x]))
-
             if not in_stroke:
                 lines += [f"G0 X{xm:.3f} Y{ym:.3f}", "G1 Z0 F100"]
                 in_stroke = True
