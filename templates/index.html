@@ -6,18 +6,19 @@
   <title>AI Pen Plotter</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; margin: 2rem auto; max-width: 860px; background: #f5f5f5; color: #222; }
+    body { font-family: Arial, sans-serif; margin: 2rem auto; max-width: 900px; background: #f5f5f5; color: #222; }
     h1 { margin-bottom: 0.2rem; font-size: 1.6rem; }
     .subtitle { color: #666; font-size: 0.88rem; margin-bottom: 1.4rem; }
     .card { background: #fff; border-radius: 8px; padding: 1.2rem 1.4rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
     .card h2 { font-size: 1rem; margin: 0 0 .8rem; color: #333; border-bottom: 1px solid #eee; padding-bottom: .4rem; }
     label { font-size: 0.88rem; font-weight: bold; display: block; margin-bottom: .3rem; }
-    input[type=file], input[type=text], input[type=number], select {
+    input[type=file], input[type=text], input[type=number], select, textarea {
       width: 100%; padding: .4rem .5rem; border: 1px solid #ccc; border-radius: 4px;
       font-size: .9rem; margin-bottom: .7rem; background: #fafafa;
     }
-    .style-row { display: flex; gap: .7rem; margin-bottom: .7rem; }
-    .style-btn { flex: 1; padding: .5rem; border: 2px solid #ccc; border-radius: 6px;
+    textarea { resize: vertical; }
+    .style-row { display: flex; gap: .7rem; margin-bottom: .7rem; flex-wrap: wrap; }
+    .style-btn { flex: 1; min-width: 120px; padding: .5rem; border: 2px solid #ccc; border-radius: 6px;
       cursor: pointer; font-size: .9rem; background: #fff; text-align: center; transition: all .15s; }
     .style-btn.active { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; font-weight: bold; }
     .btn-row { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; }
@@ -36,28 +37,35 @@
     .dot { width: 9px; height: 9px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
     .dot.active { background: #1a73e8; }
     .dot.done   { background: #2e7d32; }
-    textarea { width: 100%; height: 200px; font-family: monospace; font-size: .78rem;
-      border: 1px solid #ccc; border-radius: 4px; padding: .5rem; resize: vertical; }
+    textarea#preview { height: 200px; font-family: monospace; font-size: .78rem; }
     .info { font-size: .8rem; color: #888; margin-top: -.4rem; margin-bottom: .6rem; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .7rem; }
+
+    /* Font picker grid */
+    .font-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .6rem; margin-bottom: .8rem; }
+    .font-card {
+      border: 2px solid #ddd; border-radius: 7px; padding: .6rem .8rem;
+      cursor: pointer; transition: all .15s; background: #fafafa;
+    }
+    .font-card:hover { border-color: #aaa; background: #f0f0f0; }
+    .font-card.selected { border-color: #1a73e8; background: #e8f0fe; }
+    .font-card .fc-tag  { font-size: .7rem; color: #888; text-transform: uppercase; letter-spacing: .05em; margin-bottom: .15rem; }
+    .font-card .fc-name { font-size: .95rem; font-weight: bold; color: #222; margin-bottom: .15rem; }
+    .font-card .fc-desc { font-size: .75rem; color: #666; }
+    .font-card.selected .fc-tag  { color: #1a73e8; }
+    .font-card.selected .fc-name { color: #1a73e8; }
   </style>
 </head>
 <body>
   <h1>AI Pen Plotter</h1>
-  <p class="subtitle">Portrait → G-code &middot; YOLOv8 person detection &middot; 3 drawing styles</p>
-
-  <!-- Upload -->
-  <div class="card">
-    <h2>1 &middot; Upload Image</h2>
-    <label for="imageInput">Portrait photo</label>
-    <input id="imageInput" type="file" accept="image/*">
-  </div>
+  <p class="subtitle">Portrait &rarr; G-code &middot; YOLOv8 person detection &middot; 4 drawing styles</p>
 
   <!-- Style selector -->
   <div class="card">
-    <h2>2 &middot; Drawing Style</h2>
+    <h2>1 &middot; Drawing Style</h2>
     <div class="style-row">
       <div class="style-btn active" id="btnText" onclick="setStyle('text')">
-        <strong>Text Art</strong><br><small>A–Z brightness letters</small>
+        <strong>Text Art</strong><br><small>A&ndash;Z brightness letters</small>
       </div>
       <div class="style-btn" id="btnWave" onclick="setStyle('wave')">
         <strong>Wave Art</strong><br><small>Sine-wave modulation</small>
@@ -65,7 +73,22 @@
       <div class="style-btn" id="btnStipple" onclick="setStyle('stipple')">
         <strong>Stipple Art</strong><br><small>Voronoi dot shading</small>
       </div>
+      <div class="style-btn" id="btnWrite" onclick="setStyle('write')">
+        <strong>Write Text</strong><br><small>Plotter writes your words</small>
+      </div>
     </div>
+  </div>
+
+  <!-- Upload (hidden for write mode) -->
+  <div class="card" id="uploadCard">
+    <h2>2 &middot; Upload Image</h2>
+    <label for="imageInput">Portrait photo</label>
+    <input id="imageInput" type="file" accept="image/*">
+  </div>
+
+  <!-- Options -->
+  <div class="card">
+    <h2 id="optionsHeading">3 &middot; Options</h2>
 
     <!-- Text art options -->
     <div id="textOptions">
@@ -75,7 +98,7 @@
           <strong>Word repeat</strong><br><small>Cycle letters of a word</small>
         </div>
         <div class="style-btn active" id="btnAuto" onclick="setMode('auto')">
-          <strong>Auto A–Z</strong><br><small>Pick letter by brightness</small>
+          <strong>Auto A&ndash;Z</strong><br><small>Pick letter by brightness</small>
         </div>
       </div>
       <div id="wordOpts" style="display:none">
@@ -94,7 +117,7 @@
 
     <!-- Wave art options -->
     <div id="waveOptions" style="display:none">
-      <p class="info">Horizontal sine waves scan the face — dark areas produce tall peaks, bright areas stay flat. Looks like a Joy Division album cover.</p>
+      <p class="info">Horizontal sine waves scan the face &mdash; dark areas produce tall peaks, bright areas stay flat.</p>
       <label for="rowSpacingInput">Row spacing (px) &mdash; lower = finer detail, longer to plot</label>
       <input id="rowSpacingInput" type="number" value="8" min="4" max="20">
     </div>
@@ -103,11 +126,47 @@
     <div id="stippleOptions" style="display:none">
       <p class="info">4-layer pipeline: HED outlines &middot; Voronoi stippling &middot; ETF hair hatching &middot; Face feature emphasis</p>
     </div>
+
+    <!-- Write text options -->
+    <div id="writeOptions" style="display:none">
+      <label for="writeTextInput">Text to write on paper</label>
+      <textarea id="writeTextInput" rows="4" placeholder="Type your text here...&#10;Supports multiple lines.&#10;Poetry, captions, titles..."></textarea>
+      <p class="info">Use new lines for separate lines &middot; Long lines wrap automatically</p>
+
+      <label>Choose a font</label>
+      <div id="fontGrid" class="font-grid">
+        <p class="info" style="margin:0;grid-column:1/-1">Loading available fonts&hellip;</p>
+      </div>
+
+      <div class="grid3">
+        <div>
+          <label for="fontSizeInput">Font size (mm)</label>
+          <input id="fontSizeInput" type="number" value="10" min="4" max="60">
+          <p class="info" style="margin-top:-.5rem">~10 mm = 1 cm tall letters</p>
+        </div>
+        <div>
+          <label for="textPosSelect">Position on paper</label>
+          <select id="textPosSelect">
+            <option value="bottom">Bottom</option>
+            <option value="center">Center</option>
+            <option value="top">Top</option>
+          </select>
+        </div>
+        <div>
+          <label for="textAlignSelect">Text alignment</label>
+          <select id="textAlignSelect">
+            <option value="center">Center</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+          </select>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Generate -->
   <div class="card">
-    <h2>3 &middot; Generate</h2>
+    <h2 id="generateHeading">4 &middot; Generate</h2>
     <div class="btn-row">
       <button class="primary" id="processBtn">Generate G-code</button>
       <a class="dl-btn" id="downloadBtn" href="#">Download G-code</a>
@@ -116,7 +175,7 @@
 
   <!-- Status + progress -->
   <div class="card">
-    <div id="statusBar" class="status-bar">Idle &mdash; upload an image and click Generate</div>
+    <div id="statusBar" class="status-bar">Idle &mdash; choose a style and click Generate</div>
     <ul class="steps" id="stepList">
       <li id="s1"><span class="dot" id="d1"></span> <span id="sl1">YOLOv8 person detection</span></li>
       <li id="s2"><span class="dot" id="d2"></span> <span id="sl2">Step 2</span></li>
@@ -132,14 +191,15 @@
   </div>
 
   <script>
-    let currentStyle = 'text';
-    let currentMode  = 'auto';
-    let dlFilename   = 'drawing_text.gcode';
+    let currentStyle    = 'text';
+    let currentMode     = 'auto';
+    let selectedFontKey = '';
 
     const stepLabels = {
       text:    ['YOLOv8 detection', 'Build brightness palette', 'Tile image with letters', 'Save G-code'],
       wave:    ['YOLOv8 detection', 'Smooth brightness map', 'Generate wave scan lines', 'Save G-code'],
       stipple: ['YOLOv8 detection', 'HED outlines', 'Voronoi stippling', 'Region hatching + emphasis'],
+      write:   ['Resolve font', 'Render glyph outlines', 'Layout & word-wrap text', 'Save G-code'],
     };
 
     function setMode(m) {
@@ -152,29 +212,70 @@
 
     function setStyle(s) {
       currentStyle = s;
-      ['text','wave','stipple'].forEach(id => {
-        document.getElementById('btn' + id.charAt(0).toUpperCase() + id.slice(1)).className =
-          'style-btn' + (s === id ? ' active' : '');
+      ['text','wave','stipple','write'].forEach(id => {
+        const btnId = 'btn' + id.charAt(0).toUpperCase() + id.slice(1);
+        document.getElementById(btnId).className = 'style-btn' + (s === id ? ' active' : '');
       });
-      document.getElementById('textOptions').style.display    = s === 'text'    ? 'block' : 'none';
-      document.getElementById('waveOptions').style.display    = s === 'wave'    ? 'block' : 'none';
-      document.getElementById('stippleOptions').style.display = s === 'stipple' ? 'block' : 'none';
+
+      document.getElementById('uploadCard').style.display   = s === 'write' ? 'none' : 'block';
+      document.getElementById('textOptions').style.display   = s === 'text'    ? 'block' : 'none';
+      document.getElementById('waveOptions').style.display   = s === 'wave'    ? 'block' : 'none';
+      document.getElementById('stippleOptions').style.display= s === 'stipple' ? 'block' : 'none';
+      document.getElementById('writeOptions').style.display  = s === 'write'   ? 'block' : 'none';
+
+      const n = s === 'write' ? 1 : 2;
+      document.getElementById('optionsHeading').textContent = n + ' · Options';
+      document.getElementById('generateHeading').textContent = (n + 1) + ' · Generate';
 
       (stepLabels[s] || stepLabels.text).forEach((t, i) => {
         document.getElementById('sl' + (i + 1)).textContent = t;
       });
     }
 
-    // init labels
+    // init
     setStyle('text');
+    setMode('auto');
 
+    // ── Font picker ──────────────────────────────────────────────────────────
+    function selectFont(card) {
+      document.querySelectorAll('.font-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedFontKey = card.dataset.key;
+    }
+
+    async function loadFonts() {
+      try {
+        const resp  = await fetch('/fonts');
+        const fonts = await resp.json();
+        const grid  = document.getElementById('fontGrid');
+        if (!fonts || fonts.length === 0) {
+          grid.innerHTML = '<p class="info" style="grid-column:1/-1">No additional fonts found — system default will be used.</p>';
+          return;
+        }
+        grid.innerHTML = fonts.map((f, i) => `
+          <div class="font-card${i === 0 ? ' selected' : ''}" data-key="${f.key}" onclick="selectFont(this)">
+            <div class="fc-tag">${f.tag}</div>
+            <div class="fc-name">${f.name}</div>
+            <div class="fc-desc">${f.desc}</div>
+          </div>`).join('');
+        selectedFontKey = fonts[0].key;
+      } catch(e) {
+        document.getElementById('fontGrid').innerHTML =
+          '<p class="info" style="grid-column:1/-1">Could not load fonts — system default will be used.</p>';
+      }
+    }
+    loadFonts();
+
+    // ── Steps animation ──────────────────────────────────────────────────────
     const steps = [1,2,3,4].map(i => ({ li: document.getElementById('s'+i), dot: document.getElementById('d'+i) }));
     function resetSteps() { steps.forEach(({li, dot}) => { li.className=''; dot.className='dot'; }); }
-    function setStep(n)   { steps.forEach(({li, dot}, i) => {
-      if (i < n-1)      { li.className='done';   dot.className='dot done'; }
-      else if (i===n-1) { li.className='active'; dot.className='dot active'; }
-      else              { li.className='';        dot.className='dot'; }
-    }); }
+    function setStep(n)   {
+      steps.forEach(({li, dot}, i) => {
+        if (i < n-1)      { li.className='done';   dot.className='dot done'; }
+        else if (i===n-1) { li.className='active'; dot.className='dot active'; }
+        else              { li.className='';        dot.className='dot'; }
+      });
+    }
     function allDone() { steps.forEach(({li, dot}) => { li.className='done'; dot.className='dot done'; }); }
     function setStatus(msg, type='') {
       const el = document.getElementById('statusBar');
@@ -182,38 +283,49 @@
       el.className = 'status-bar' + (type ? ' ' + type : '');
     }
 
-    const stepTimes = { text: 8000, wave: 6000, stipple: 15000 };
+    const stepTimes = { text: 8000, wave: 6000, stipple: 15000, write: 2000 };
     let stepTimer = null;
     function animateSteps() {
       let n = 1; setStep(n);
       stepTimer = setInterval(() => { if (++n <= 4) setStep(n); }, stepTimes[currentStyle] || 8000);
     }
 
+    // ── Generate button ──────────────────────────────────────────────────────
     document.getElementById('processBtn').addEventListener('click', async () => {
-      const files = document.getElementById('imageInput').files;
-      if (!files || files.length === 0) { setStatus('Please choose an image first.', 'error'); return; }
-
       const fd = new FormData();
-      fd.append('image', files[0]);
       fd.append('style', currentStyle);
 
-      if (currentStyle === 'text') {
-        fd.append('mode', currentMode);
-        fd.append('cell_h', document.getElementById('cellInput').value || '14');
-        if (currentMode === 'auto') {
-          fd.append('chars', document.getElementById('charsInput').value || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
-        } else {
-          fd.append('word', document.getElementById('wordInput').value || 'VARSHEETHvarsheeth');
+      if (currentStyle === 'write') {
+        const text = document.getElementById('writeTextInput').value.trim();
+        if (!text) { setStatus('Please type some text first.', 'error'); return; }
+        fd.append('write_text',  text);
+        fd.append('font_key',    selectedFontKey);
+        fd.append('font_h',      document.getElementById('fontSizeInput').value || '10');
+        fd.append('text_pos',    document.getElementById('textPosSelect').value);
+        fd.append('text_align',  document.getElementById('textAlignSelect').value);
+      } else {
+        const files = document.getElementById('imageInput').files;
+        if (!files || files.length === 0) { setStatus('Please choose an image first.', 'error'); return; }
+        fd.append('image', files[0]);
+
+        if (currentStyle === 'text') {
+          fd.append('mode', currentMode);
+          fd.append('cell_h', document.getElementById('cellInput').value || '14');
+          if (currentMode === 'auto') {
+            fd.append('chars', document.getElementById('charsInput').value || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+          } else {
+            fd.append('word', document.getElementById('wordInput').value || 'VARSHEETHvarsheeth');
+          }
+        } else if (currentStyle === 'wave') {
+          fd.append('row_spacing', document.getElementById('rowSpacingInput').value || '8');
         }
-      } else if (currentStyle === 'wave') {
-        fd.append('row_spacing', document.getElementById('rowSpacingInput').value || '8');
       }
 
       resetSteps();
       document.getElementById('preview').value = '';
       document.getElementById('downloadBtn').style.display = 'none';
       document.getElementById('processBtn').disabled = true;
-      setStatus('Processing… this takes 1–4 minutes');
+      setStatus('Processing…');
       animateSteps();
 
       try {
@@ -225,9 +337,8 @@
 
         allDone();
         document.getElementById('preview').value = data.gcode_preview || '';
-        setStatus('Done — ' + data.draw_moves + ' draw moves (' + data.style + ' style)', 'done');
+        setStatus('Done — ' + data.draw_moves + ' draw moves (' + data.style + ')', 'done');
 
-        dlFilename = data.filename;
         const dlBtn = document.getElementById('downloadBtn');
         dlBtn.href = '/download?file=' + encodeURIComponent(data.filename);
         dlBtn.style.display = 'inline-block';

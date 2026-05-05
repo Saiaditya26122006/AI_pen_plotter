@@ -8,9 +8,9 @@ from modules.wave_pipeline import process_wave_art
 
 app = Flask(__name__)
 
-PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
-INPUT_DIR = os.path.join(PROJECT_ROOT, "input")
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
+PROJECT_ROOT  = os.path.abspath(os.path.dirname(__file__))
+INPUT_DIR     = os.path.join(PROJECT_ROOT, "input")
+OUTPUT_DIR    = os.path.join(PROJECT_ROOT, "output")
 UPLOADED_PATH = os.path.join(INPUT_DIR, "uploaded.png")
 
 
@@ -19,13 +19,60 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/fonts", methods=["GET"])
+def fonts():
+    """Return the list of font catalog entries available on this machine."""
+    from modules.text_writer import detect_available_fonts
+    return jsonify(detect_available_fonts())
+
+
 @app.route("/process", methods=["POST"])
 def process():
+    style = request.form.get("style", "text")
+
+    # ── Write mode: no image required ─────────────────────────────────────────
+    if style == "write":
+        text       = (request.form.get("write_text") or "").strip()
+        font_key   = (request.form.get("font_key") or "").strip() or None
+        try:
+            font_h = float(request.form.get("font_h", 10))
+            font_h = max(4.0, min(font_h, 60.0))
+        except ValueError:
+            font_h = 10.0
+        position = request.form.get("text_pos", "bottom")
+        align    = request.form.get("text_align", "center")
+
+        if not text:
+            return jsonify({"status": "error", "message": "No text provided"}), 400
+
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        try:
+            from modules.write_pipeline import process_text_write
+            gcode = process_text_write(
+                text,
+                font_h      = font_h,
+                position    = position,
+                align       = align,
+                font_key    = font_key,
+                interactive = False,   # web: never block on stdin
+            )
+        except Exception as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 500
+
+        draw_moves = sum(1 for ln in gcode.splitlines() if ln.startswith("G1 X"))
+        return jsonify({
+            "status":        "done",
+            "style":         "write",
+            "draw_moves":    draw_moves,
+            "filename":      "drawing_write.gcode",
+            "gcode_preview": gcode[:2000],
+        })
+
+    # ── Art modes: image required ──────────────────────────────────────────────
     file = request.files.get("image")
     if file is None or file.filename == "":
         return jsonify({"status": "error", "message": "No image uploaded"}), 400
 
-    style = request.form.get("style", "text")
     word  = request.form.get("word", "VARSHEETHvarsheeth").strip() or "VARSHEETHvarsheeth"
     mode  = request.form.get("mode", "auto")
     chars = (request.form.get("chars", "ABCDEFGHIJKLMNOPQRSTUVWXYZ").strip().upper()
@@ -41,7 +88,7 @@ def process():
     except ValueError:
         row_spacing = 8
 
-    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(INPUT_DIR,  exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     file.save(UPLOADED_PATH)
 

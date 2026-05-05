@@ -15,9 +15,10 @@ _FONT_CANDIDATES = [
 _RENDER_PX = 120   # render each letter at this height — higher = more contour detail
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    for path in _FONT_CANDIDATES:
-        if os.path.exists(path):
+def _load_font(size: int, font_path: str = None) -> ImageFont.FreeTypeFont:
+    candidates = ([font_path] if font_path else []) + _FONT_CANDIDATES
+    for path in candidates:
+        if path and os.path.exists(path):
             try:
                 return ImageFont.truetype(path, size)
             except Exception:
@@ -25,13 +26,13 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _render_binary(letter: str, size: int = _RENDER_PX) -> np.ndarray:
+def _render_binary(letter: str, size: int = _RENDER_PX, font_path: str = None) -> np.ndarray:
     """Render a letter as a white-on-black tight binary image (minimal padding)."""
     pad = size // 6          # tight padding — was size//2, which wasted 75% of canvas
     canvas = size + pad * 2
     img = Image.new("L", (canvas, canvas), 0)
     draw = ImageDraw.Draw(img)
-    font = _load_font(size)
+    font = _load_font(size, font_path)
 
     bbox = draw.textbbox((0, 0), letter, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -43,7 +44,7 @@ def _render_binary(letter: str, size: int = _RENDER_PX) -> np.ndarray:
     return (arr > 64).astype(np.uint8) * 255
 
 
-def _letter_to_outline_strokes(letter: str) -> list:
+def _letter_to_outline_strokes(letter: str, font_path: str = None) -> list:
     """
     Render a letter, find its outline contours, normalize to bounding box.
 
@@ -53,7 +54,7 @@ def _letter_to_outline_strokes(letter: str) -> list:
     Uses outline tracing (not skeleton) so letters look correct even at
     very small scale (6–8 px on screen).
     """
-    binary = _render_binary(letter, _RENDER_PX)
+    binary = _render_binary(letter, _RENDER_PX, font_path)
     if not np.any(binary):
         return []
 
@@ -100,25 +101,25 @@ def _letter_to_outline_strokes(letter: str) -> list:
     return strokes
 
 
-def _compute_density(letter: str) -> float:
+def _compute_density(letter: str, font_path: str = None) -> float:
     """Fraction of filled pixels in the rendered letter — visual ink weight."""
-    binary = _render_binary(letter, _RENDER_PX)
+    binary = _render_binary(letter, _RENDER_PX, font_path)
     return float(np.sum(binary > 0)) / max(1, binary.size)
 
 
-def build_brightness_palette(chars: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ") -> list:
+def build_brightness_palette(chars: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", font_path: str = None) -> list:
     """
     Return list of unique chars sorted darkest-first (highest ink density → lowest).
     Maps image brightness → letter: dark pixel → heavy letter (M/W/B), light → thin (I/L/T).
     """
     unique = list(dict.fromkeys(chars))   # preserve order, deduplicate
-    densities = {ch: _compute_density(ch) for ch in unique}
+    densities = {ch: _compute_density(ch, font_path) for ch in unique}
     sorted_chars = sorted(unique, key=lambda c: densities[c], reverse=True)
     print(f"  Brightness palette (dark->light): {''.join(sorted_chars)}")
     return sorted_chars
 
 
-def precompute_strokes(word: str) -> dict:
+def precompute_strokes(word: str, font_path: str = None) -> dict:
     """
     Pre-render and outline-trace every unique character in word.
     Returns dict: char → list of normalized stroke paths.
@@ -127,7 +128,7 @@ def precompute_strokes(word: str) -> dict:
     unique = sorted(set(word))
     print(f"  Pre-rendering {len(unique)} characters: {unique}")
     for ch in unique:
-        strokes = _letter_to_outline_strokes(ch)
+        strokes = _letter_to_outline_strokes(ch, font_path)
         cache[ch] = strokes
         pts_total = sum(len(s) for s in strokes)
         print(f"    '{ch}': {len(strokes)} contours, {pts_total} pts")
